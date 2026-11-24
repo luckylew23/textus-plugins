@@ -130,6 +130,8 @@
     element("s3-more").hidden = provider !== "s3";
     element("endpoint-field").hidden = provider === "nutstore" || git;
     element("prefix-field").hidden = git;
+    element("encrypt-row").hidden = git;
+    if (git) input("encrypt").checked = false;
     element("nutstore-help").hidden = provider !== "nutstore";
     element("github-help").hidden = !git;
     const [account, secret] = signIn[provider] ?? signIn.s3;
@@ -175,6 +177,7 @@
     element("c-encrypt").textContent = api.t(
       config.encrypt ? "encryptionOn" : "encryptionOff"
     );
+    element("c-encrypt-row").hidden = config.provider === "github";
     element("fields").disabled = busy || !root;
     for (const id of ["test", "save", "test-saved", "edit", "disconnect"])
       element(id).disabled = busy || !root;

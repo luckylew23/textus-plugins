@@ -156,6 +156,9 @@ function formToggles() {
   // The repository is the address and every workspace lives under the
   // same folder in it: no directory to pick.
   element("prefix-field").hidden = git;
+  // The mirror is plain files by definition: no encryption to turn on.
+  element("encrypt-row").hidden = git;
+  if (git) input("encrypt").checked = false;
   element("nutstore-help").hidden = provider !== "nutstore";
   element("github-help").hidden = !git;
   const [account, secret] = signIn[provider] ?? signIn.s3;
@@ -207,6 +210,7 @@ function show() {
   element("c-encrypt").textContent = api.t(
     config.encrypt ? "encryptionOn" : "encryptionOff",
   );
+  element("c-encrypt-row").hidden = config.provider === "github";
   element<HTMLFieldSetElement>("fields").disabled = busy || !root;
   for (const id of ["test", "save", "test-saved", "edit", "disconnect"])
     element<HTMLButtonElement>(id).disabled = busy || !root;

@@ -104,6 +104,9 @@ export function normalizeConfig(
     // The repository is the address; every workspace lives under the same
     // folder in it, so there is no directory to pick.
     c.prefix = GIT_PREFIX;
+    // A mirror of plain files cannot be encrypted - the whole point is
+    // that any Git tool reads it as it is.
+    c.encrypt = false;
   } else {
     c.region = "";
     c.bucket = "";

@@ -202,6 +202,36 @@ export class GitHubStore implements ObjectStore {
     const sha = (await this.loadTree()).get(path);
     return sha ? this.blobBytes(sha) : null;
   }
+  /** Every blob in the repository, path to sha - the mirror sync sees the
+   *  repository as the plain folder it is, at any path anyone pushes to. */
+  async mirrorTree(): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const head = await this.commitHead();
+    if (head) {
+      const res = await this.request(
+        "GET",
+        `/git/trees/${head.tree}?recursive=1`,
+      );
+      this.require(res);
+      const data = (await res.json()) as {
+        tree?: { path?: string; sha?: string; type?: string }[];
+      };
+      for (const item of data?.tree ?? [])
+        if (item.type === "blob" && item.path) map.set(item.path, item.sha!);
+    }
+    return map;
+  }
+  /** A file of the mirror as it is on the branch now. */
+  async mirrorBlob(sha: string): Promise<Uint8Array> {
+    return this.blobBytes(sha);
+  }
+  /** The mirror's connection test: the repository is readable and the
+   *  credentials accepted. No probe files - the repository stays clean. */
+  async testMirror(): Promise<void> {
+    const res = await this.request("GET", "");
+    this.require(res);
+    await this.branch();
+  }
   async has(key: string): Promise<boolean> {
     const path = this.full(key);
     if (this.staged.has(path)) return this.staged.get(path) !== null;
@@ -251,15 +281,19 @@ export class GitHubStore implements ObjectStore {
   }
   /** One commit carrying every staged write. A ref that moved meanwhile
    *  (another device, the person) is rebuilt on top of, not forced over. */
-  async commit(message: string): Promise<void> {
-    if (!this.staged.size) return;
+  /** One commit carrying every staged write; resolves to the paths it
+   *  changed, to their blob shas - the mirror sync's next base. A ref that
+   *  moved meanwhile (another device, the person) is rebuilt on top of,
+   *  not forced over. */
+  async commit(message: string): Promise<Map<string, string>> {
+    if (!this.staged.size) return new Map();
     const entries = [...this.staged];
     this.staged.clear();
     let changed = entries;
     if (!(await this.commitHead())) {
       const first = changed.find(([, bytes]) => bytes !== null);
       // Nothing to start an empty repository with: a deletion commits nothing.
-      if (!first) return;
+      if (!first) return new Map();
       await this.firstFile(first[0], first[1]!, message);
       changed = changed.filter(([path]) => path !== first[0]);
     }
@@ -270,7 +304,7 @@ export class GitHubStore implements ObjectStore {
     changed = changed.filter(
       ([path, bytes]) => bytes !== null || known.has(path),
     );
-    if (!changed.length) return;
+    if (!changed.length) return new Map();
     // A deletion of the prefix's last file would leave the branch's tree
     // empty, and GitHub's git database answers 404 to a commit with no
     // tree; nothing would be left to sync with, so the store empties
@@ -281,7 +315,7 @@ export class GitHubStore implements ObjectStore {
       changed.length === known.size
     ) {
       this.tree = new Map();
-      return;
+      return new Map();
     }
     const blobs = new Map<string, string>();
     for (const [path, bytes] of changed) {
@@ -322,11 +356,15 @@ export class GitHubStore implements ObjectStore {
       if ([409, 422].includes(ref.status) && attempt + 1 < ATTEMPTS) continue;
       this.require(ref);
       this.tree ??= new Map();
+      const applied = new Map<string, string>();
       for (const [path, bytes] of changed) {
         if (bytes === null) this.tree.delete(path);
-        else this.tree.set(path, blobs.get(path)!);
+        else {
+          this.tree.set(path, blobs.get(path)!);
+          applied.set(path, blobs.get(path)!);
+        }
       }
-      return;
+      return applied;
     }
   }
 }

@@ -16,6 +16,8 @@ import { masked, Settings } from "./settings";
 import { doneText, fewPerSecond } from "./status";
 import { testConnection } from "./transport";
 import { openStore, type Store } from "./store";
+import { GitHubStore } from "./github-store";
+import { mirrorSync, parseMirrorBase } from "./mirror";
 import { recoverLock, testDraft, type Draft } from "./connection";
 import {
   deviceName,
@@ -193,6 +195,15 @@ class Controller implements Host {
     { test = false, quiet = false } = {},
   ) {
     const key = await this.settings.baseKey(root, config);
+    if (config.provider === "github") {
+      // The mirror sync uses the store as itself: no encryption wrapper,
+      // no probe files - the repository stays a plain folder any Git tool
+      // can read, and the credentials are checked with one request.
+      await (store instanceof GitHubStore ? store.testMirror() : Promise.resolve());
+      this.tested.add(key);
+      checkAbort(this.abort?.signal);
+      return { key, opened: store };
+    }
     const pin = await this.ctx.storage.global.get(`vault:${key}`);
     if (pin != null && (typeof pin !== "string" || !/^[a-f0-9]{64}$/.test(pin)))
       throw new SyncError("invalidBase");
@@ -277,6 +288,45 @@ class Controller implements Host {
       });
       if (kind === "test") {
         this.message("tested");
+        return null;
+      }
+      // A GitHub repository is the workspace whole (mirror mode): the sync
+      // is a diff over the branch's files and one commit, without the
+      // manifest, lock and trash of the chunked services.
+      if (config.provider === "github") {
+        const gitStore = opened as GitHubStore;
+        const scanned = await this.ctx.storage.global.get(key);
+        this.pacer.started();
+        const gitignore = config.gitignore
+          ? await readGitignore(this.api.files, root)
+          : "";
+        this.workspace = new Workspace(
+          this.api,
+          root,
+          this.ctx.storage.global,
+          this.abort.signal,
+          scopeOf(config, gitignore),
+          config.maxFileMiB * 1024 * 1024,
+        );
+        const result = await mirrorSync({
+          store: gitStore,
+          local: this.workspace,
+          base: parseMirrorBase(scanned),
+          saveBase: (next) => this.ctx.storage.global.set(key, { files: next }),
+          progress: fewPerSecond((phase, current, total) => {
+            this.state.progress = total ? current / total : null;
+            this.message(phase, false, current, total);
+          }),
+          signal: this.abort.signal,
+        });
+        result.tooLarge = [...this.workspace.large].sort();
+        const at = new Date().toISOString();
+        await this.ctx.storage.global.set(`last:${key}`, { at, result });
+        this.state.result = result;
+        this.state.lastRun = at;
+        const done = doneText(result, this.t);
+        if (done) this.message("done", false, done);
+        else this.message("unchanged");
         return null;
       }
       const base = parseBase(await this.ctx.storage.global.get(key));

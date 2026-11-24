@@ -218,6 +218,7 @@ function normalizeConfig(input, device = deviceOf()) {
     if (!/^[\w.-]+(\/[\w.-]+)?$/.test(c.bucket) || c.bucket.includes(".."))
       throw new SyncError("invalidRepo");
     c.prefix = GIT_PREFIX;
+    c.encrypt = false;
   } else {
     c.region = "";
     c.bucket = "";
@@ -2986,6 +2987,34 @@ var GitHubStore = class {
     const sha = (await this.loadTree()).get(path);
     return sha ? this.blobBytes(sha) : null;
   }
+  /** Every blob in the repository, path to sha - the mirror sync sees the
+   *  repository as the plain folder it is, at any path anyone pushes to. */
+  async mirrorTree() {
+    const map = /* @__PURE__ */ new Map();
+    const head = await this.commitHead();
+    if (head) {
+      const res = await this.request(
+        "GET",
+        `/git/trees/${head.tree}?recursive=1`
+      );
+      this.require(res);
+      const data = await res.json();
+      for (const item of data?.tree ?? [])
+        if (item.type === "blob" && item.path) map.set(item.path, item.sha);
+    }
+    return map;
+  }
+  /** A file of the mirror as it is on the branch now. */
+  async mirrorBlob(sha) {
+    return this.blobBytes(sha);
+  }
+  /** The mirror's connection test: the repository is readable and the
+   *  credentials accepted. No probe files - the repository stays clean. */
+  async testMirror() {
+    const res = await this.request("GET", "");
+    this.require(res);
+    await this.branch();
+  }
   async has(key) {
     const path = this.full(key);
     if (this.staged.has(path)) return this.staged.get(path) !== null;
@@ -3028,14 +3057,18 @@ var GitHubStore = class {
   }
   /** One commit carrying every staged write. A ref that moved meanwhile
    *  (another device, the person) is rebuilt on top of, not forced over. */
+  /** One commit carrying every staged write; resolves to the paths it
+   *  changed, to their blob shas - the mirror sync's next base. A ref that
+   *  moved meanwhile (another device, the person) is rebuilt on top of,
+   *  not forced over. */
   async commit(message) {
-    if (!this.staged.size) return;
+    if (!this.staged.size) return /* @__PURE__ */ new Map();
     const entries = [...this.staged];
     this.staged.clear();
     let changed = entries;
     if (!await this.commitHead()) {
       const first = changed.find(([, bytes]) => bytes !== null);
-      if (!first) return;
+      if (!first) return /* @__PURE__ */ new Map();
       await this.firstFile(first[0], first[1], message);
       changed = changed.filter(([path]) => path !== first[0]);
     }
@@ -3043,10 +3076,10 @@ var GitHubStore = class {
     changed = changed.filter(
       ([path, bytes]) => bytes !== null || known.has(path)
     );
-    if (!changed.length) return;
+    if (!changed.length) return /* @__PURE__ */ new Map();
     if (changed.every(([path, bytes]) => bytes === null && known.has(path)) && changed.length === known.size) {
       this.tree = /* @__PURE__ */ new Map();
-      return;
+      return /* @__PURE__ */ new Map();
     }
     const blobs = /* @__PURE__ */ new Map();
     for (const [path, bytes] of changed) {
@@ -3087,11 +3120,15 @@ var GitHubStore = class {
       if ([409, 422].includes(ref.status) && attempt + 1 < ATTEMPTS) continue;
       this.require(ref);
       this.tree ?? (this.tree = /* @__PURE__ */ new Map());
+      const applied = /* @__PURE__ */ new Map();
       for (const [path, bytes] of changed) {
         if (bytes === null) this.tree.delete(path);
-        else this.tree.set(path, blobs.get(path));
+        else {
+          this.tree.set(path, blobs.get(path));
+          applied.set(path, blobs.get(path));
+        }
       }
-      return;
+      return applied;
     }
   }
 };
@@ -3101,9 +3138,184 @@ function openStore(config, credentials, fetch2, sleep) {
   return providers[config.provider].transport === "git" ? new GitHubStore(config, credentials, fetch2, sleep) : new RemoteStore(config, credentials, fetch2, sleep);
 }
 
+// development/cloud-sync/src/mirror.ts
+var parseMirrorBase = (value) => {
+  if (!value || typeof value !== "object") return {};
+  const files = value.files;
+  if (!files || typeof files !== "object") return {};
+  const out = {};
+  for (const [path, one] of Object.entries(files)) {
+    const side = one;
+    if (typeof side?.local === "string" && typeof side?.remote === "string")
+      out[path] = { local: side.local, remote: side.remote };
+  }
+  return out;
+};
+var OWN = /^v1\//;
+var conflictName = (path, at) => {
+  const dot = path.lastIndexOf(".");
+  const stem = dot > 0 ? path.slice(0, dot) : path;
+  const tail = dot > 0 ? path.slice(dot) : "";
+  const stamp = at.toISOString().replace(/[-:]/g, "").replace(/\..+/, "");
+  return `${stem} (conflict ${stamp})${tail}`;
+};
+async function mirrorSync({
+  store,
+  local,
+  base,
+  saveBase,
+  progress,
+  signal
+}) {
+  checkAbort(signal);
+  const result = {
+    uploaded: 0,
+    downloaded: 0,
+    removed: 0,
+    moved: 0,
+    conflicts: [],
+    deferred: [],
+    notTrashed: [],
+    unchanged: 0
+  };
+  const scanned = await local.scan();
+  const localHash = {};
+  for (const [path, entry] of Object.entries(scanned))
+    if (local.wants(path)) localHash[path] = entry.hash;
+  const branch = await store.mirrorTree();
+  const remote = new Map(
+    [...branch].filter(([path]) => !OWN.test(path) && local.wants(path))
+  );
+  checkAbort(signal);
+  const restore = remote.size === 0 && Object.keys(base).length > 0;
+  void restore;
+  const uploads = /* @__PURE__ */ new Map();
+  const send = async (path) => {
+    let bytes = uploads.get(path);
+    if (!bytes) {
+      const read2 = await local.read(path);
+      if (!read2) throw new SyncError("localWriteError", [path]);
+      bytes = read2;
+      uploads.set(path, bytes);
+    }
+    return bytes;
+  };
+  const downloads = [];
+  const next = {};
+  const steps = [
+    .../* @__PURE__ */ new Set([
+      ...Object.keys(base),
+      ...remote.keys(),
+      ...Object.keys(localHash)
+    ])
+  ].sort();
+  progress?.("comparing", 0, steps.length);
+  let at = 0;
+  for (const path of steps) {
+    checkAbort(signal);
+    if (!local.wants(path)) continue;
+    at++;
+    progress?.("comparing", at, steps.length);
+    const mine = localHash[path];
+    const theirs = remote.get(path);
+    const remembered = base[path];
+    if (!mine && !theirs) continue;
+    if (!theirs) {
+      if (mine) {
+        await send(path);
+      }
+      continue;
+    }
+    if (!mine) {
+      if (theirs === remembered?.remote) {
+        await store.remove(path);
+        result.removed++;
+      } else {
+        downloads.push({
+          path,
+          bytes: await store.mirrorBlob(theirs),
+          expected: null,
+          from: theirs
+        });
+      }
+      continue;
+    }
+    if (!remembered) {
+      const bytes2 = await store.mirrorBlob(theirs);
+      if (await hash(bytes2) === mine) {
+        next[path] = { local: mine, remote: theirs };
+        result.unchanged++;
+      } else {
+        const copy2 = conflictName(path, /* @__PURE__ */ new Date());
+        downloads.push({ path: copy2, bytes: bytes2, expected: null, from: theirs });
+        await send(path);
+        result.conflicts.push(copy2);
+      }
+      continue;
+    }
+    if (theirs === remembered?.remote && mine === remembered?.local) {
+      next[path] = { local: mine, remote: theirs };
+      result.unchanged++;
+      continue;
+    }
+    if (theirs === remembered?.remote) {
+      await send(path);
+      continue;
+    }
+    if (mine === remembered?.local) {
+      downloads.push({
+        path,
+        bytes: await store.mirrorBlob(theirs),
+        expected: mine,
+        from: theirs
+      });
+      continue;
+    }
+    const bytes = await store.mirrorBlob(theirs);
+    const copy = conflictName(path, /* @__PURE__ */ new Date());
+    downloads.push({ path: copy, bytes, expected: null, from: theirs });
+    await send(path);
+    result.conflicts.push(copy);
+  }
+  progress?.("downloading", 0, downloads.length);
+  let arrived = 0;
+  for (const one of downloads) {
+    checkAbort(signal);
+    progress?.("downloading", arrived++, downloads.length);
+    const applied = await local.apply(one.path, one.bytes, one.expected);
+    if (applied === true) {
+      result.downloaded++;
+      if (!OWN.test(one.path))
+        next[one.path] = { local: await hash(one.bytes), remote: one.from };
+    } else if (applied === "deferred") {
+      result.deferred.push(one.path);
+    }
+  }
+  progress?.("uploading", 0, uploads.size);
+  let sent = 0;
+  for (const [path, bytes] of uploads) {
+    checkAbort(signal);
+    progress?.("uploading", sent++, uploads.size);
+    await store.put(path, bytes);
+  }
+  const committed = await store.commit("Textus sync");
+  result.uploaded = committed.size;
+  for (const [path, sha] of committed) {
+    const bytes = uploads.get(path);
+    next[path] = { local: bytes ? await hash(bytes) : "", remote: sha };
+  }
+  for (const path of result.deferred) delete next[path];
+  await saveBase(next);
+  return result;
+}
+
 // development/cloud-sync/src/connection.ts
 async function testDraft(config, credentials, fetch2, signal) {
   const store = openStore(config, credentials, fetch2);
+  if (config.provider === "github") {
+    await (store instanceof GitHubStore ? store.testMirror() : Promise.resolve());
+    return;
+  }
   await testConnection(
     config.encrypt ? await openEncryptedStore(store, credentials.syncPassword ?? "", {
       signal
@@ -3441,6 +3653,12 @@ var Controller = class {
   /** The remote folder, opened plain or encrypted as the folder is set up. */
   async open(root, config, store, { test = false, quiet = false } = {}) {
     const key = await this.settings.baseKey(root, config);
+    if (config.provider === "github") {
+      await (store instanceof GitHubStore ? store.testMirror() : Promise.resolve());
+      this.tested.add(key);
+      checkAbort(this.abort?.signal);
+      return { key, opened: store };
+    }
     const pin = await this.ctx.storage.global.get(`vault:${key}`);
     if (pin != null && (typeof pin !== "string" || !/^[a-f0-9]{64}$/.test(pin)))
       throw new SyncError("invalidBase");
@@ -3517,6 +3735,40 @@ var Controller = class {
       });
       if (kind === "test") {
         this.message("tested");
+        return null;
+      }
+      if (config.provider === "github") {
+        const gitStore = opened;
+        const scanned = await this.ctx.storage.global.get(key);
+        this.pacer.started();
+        const gitignore2 = config.gitignore ? await readGitignore(this.api.files, root) : "";
+        this.workspace = new Workspace(
+          this.api,
+          root,
+          this.ctx.storage.global,
+          this.abort.signal,
+          scopeOf(config, gitignore2),
+          config.maxFileMiB * 1024 * 1024
+        );
+        const result2 = await mirrorSync({
+          store: gitStore,
+          local: this.workspace,
+          base: parseMirrorBase(scanned),
+          saveBase: (next) => this.ctx.storage.global.set(key, { files: next }),
+          progress: fewPerSecond((phase, current, total) => {
+            this.state.progress = total ? current / total : null;
+            this.message(phase, false, current, total);
+          }),
+          signal: this.abort.signal
+        });
+        result2.tooLarge = [...this.workspace.large].sort();
+        const at2 = (/* @__PURE__ */ new Date()).toISOString();
+        await this.ctx.storage.global.set(`last:${key}`, { at: at2, result: result2 });
+        this.state.result = result2;
+        this.state.lastRun = at2;
+        const done2 = doneText(result2, this.t);
+        if (done2) this.message("done", false, done2);
+        else this.message("unchanged");
         return null;
       }
       const base = parseBase(await this.ctx.storage.global.get(key));

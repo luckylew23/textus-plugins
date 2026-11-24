@@ -2,6 +2,7 @@ import { openEncryptedStore } from "./encrypted-store";
 import { openPlainStore } from "./plain-store";
 import { testConnection, type Fetch } from "./transport";
 import { openStore, type Store } from "./store";
+import { GitHubStore } from "./github-store";
 import {
   LOCK,
   SyncError,
@@ -25,6 +26,12 @@ export async function testDraft(
   signal?: AbortSignal,
 ) {
   const store = openStore(config, credentials, fetch);
+  if (config.provider === "github") {
+    // The mirror has no probe files to write; one request checks the
+    // repository and the credentials.
+    await (store instanceof GitHubStore ? store.testMirror() : Promise.resolve());
+    return;
+  }
   await testConnection(
     config.encrypt
       ? await openEncryptedStore(store, credentials.syncPassword ?? "", {
