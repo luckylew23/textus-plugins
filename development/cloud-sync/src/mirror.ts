@@ -85,14 +85,6 @@ export async function mirrorSync({
   );
   checkAbort(signal);
 
-  // A branch emptied entirely while this device remembers a full sync was
-  // not this device's doing - a wipe by a broken build, or a forced push
-  // gone wrong. The folder is re-uploaded rather than echoed downward:
-  // a branch-side loss is handled like any other branch-side deletion,
-  // which always comes back.
-  const restore = remote.size === 0 && Object.keys(base).length > 0;
-  void restore;
-
   /** Path to the bytes to send, read lazily so an unchanged sync reads
    *  nothing; kept until the base is written, for its hash. */
   const uploads = new Map<string, Uint8Array>();

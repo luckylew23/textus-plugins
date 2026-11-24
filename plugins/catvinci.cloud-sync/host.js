@@ -3187,8 +3187,6 @@ async function mirrorSync({
     [...branch].filter(([path]) => !OWN.test(path) && local.wants(path))
   );
   checkAbort(signal);
-  const restore = remote.size === 0 && Object.keys(base).length > 0;
-  void restore;
   const uploads = /* @__PURE__ */ new Map();
   const send = async (path) => {
     let bytes = uploads.get(path);
