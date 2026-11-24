@@ -37,6 +37,19 @@ export interface MirrorSyncOptions {
  *  lock would live. Never mirrored, never fetched as notes. */
 const OWN = /^v1\//;
 
+/** Git's own object name for bytes: a first connection compares with the
+ *  branch by this, so files that are already there cost no download. */
+const gitSha = async (bytes: Uint8Array): Promise<string> => {
+  const header = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  const all = new Uint8Array(header.length + bytes.length);
+  all.set(header);
+  all.set(bytes, header.length);
+  const digest = await crypto.subtle.digest("SHA-1", all.buffer);
+  return [...new Uint8Array(digest)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+};
+
 const conflictName = (path: string, at: Date) => {
   const dot = path.lastIndexOf(".");
   const stem = dot > 0 ? path.slice(0, dot) : path;
@@ -157,14 +170,21 @@ export async function mirrorSync({
       // contents decide: the same bytes are just there; different ones
       // are a change nobody remembers, so the folder wins and the
       // branch's version is kept as a conflict copy.
-      const bytes = await store.mirrorBlob(theirs);
-      if ((await hash(bytes)) === mine) {
+      // Git's own name for the local bytes tells whether the branch
+      // already has them, without downloading anything.
+      const bytes = await send(path);
+      if ((await gitSha(bytes)) === theirs) {
+        uploads.delete(path);
         next[path] = { local: mine, remote: theirs };
         result.unchanged++;
       } else {
         const copy = conflictName(path, new Date());
-        downloads.push({ path: copy, bytes, expected: null, from: theirs });
-        await send(path);
+        downloads.push({
+          path: copy,
+          bytes: await store.mirrorBlob(theirs),
+          expected: null,
+          from: theirs,
+        });
         result.conflicts.push(copy);
       }
       continue;

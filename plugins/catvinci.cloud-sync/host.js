@@ -3152,6 +3152,14 @@ var parseMirrorBase = (value) => {
   return out;
 };
 var OWN = /^v1\//;
+var gitSha = async (bytes) => {
+  const header2 = new TextEncoder().encode(`blob ${bytes.length}\0`);
+  const all = new Uint8Array(header2.length + bytes.length);
+  all.set(header2);
+  all.set(bytes, header2.length);
+  const digest = await crypto.subtle.digest("SHA-1", all.buffer);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+};
 var conflictName = (path, at) => {
   const dot = path.lastIndexOf(".");
   const stem = dot > 0 ? path.slice(0, dot) : path;
@@ -3239,14 +3247,19 @@ async function mirrorSync({
       continue;
     }
     if (!remembered) {
-      const bytes2 = await store.mirrorBlob(theirs);
-      if (await hash(bytes2) === mine) {
+      const bytes2 = await send(path);
+      if (await gitSha(bytes2) === theirs) {
+        uploads.delete(path);
         next[path] = { local: mine, remote: theirs };
         result.unchanged++;
       } else {
         const copy2 = conflictName(path, /* @__PURE__ */ new Date());
-        downloads.push({ path: copy2, bytes: bytes2, expected: null, from: theirs });
-        await send(path);
+        downloads.push({
+          path: copy2,
+          bytes: await store.mirrorBlob(theirs),
+          expected: null,
+          from: theirs
+        });
         result.conflicts.push(copy2);
       }
       continue;

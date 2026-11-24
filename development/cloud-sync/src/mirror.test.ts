@@ -14,10 +14,17 @@ const github = (files: Record<string, string> = {}) => {
   const blobs = new Map<string, string>(); // sha to content
   let n = 0;
   /** Another tool pushing: a real change, so a real new blob sha. */
+  /** Git's object name for the content, as GitHub's tree reports it. */
+  const gitSha = (content: string) => {
+    const body = Buffer.from(content);
+    return require("crypto")
+      .createHash("sha1")
+      .update(Buffer.concat([Buffer.from(`blob ${body.length}\0`), body]))
+      .digest("hex");
+  };
   const push = (path: string, content: string) => {
-    const sha = `blob-${++n}`;
-    blobs.set(sha, content);
-    tree.set(path, sha);
+    blobs.set(gitSha(content), content);
+    tree.set(path, gitSha(content));
   };
   for (const [p, c] of Object.entries(files)) push(p, c);
   const json = (status: number, body: unknown) =>
@@ -48,9 +55,9 @@ const github = (files: Record<string, string> = {}) => {
         : json(404, {});
     }
     if (method === "POST" && path === "/git/blobs") {
-      const sha = `blob-${++n}`;
-      blobs.set(sha, Buffer.from(body.content, "base64").toString("utf8"));
-      return json(201, { sha });
+      const content = Buffer.from(body.content, "base64").toString("utf8");
+      blobs.set(gitSha(content), content);
+      return json(201, { sha: gitSha(content) });
     }
     if (method === "POST" && path === "/git/trees") {
       const after = new Map(tree);
