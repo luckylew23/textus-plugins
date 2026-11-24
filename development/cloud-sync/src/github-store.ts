@@ -49,6 +49,9 @@ export class GitHubStore implements ObjectStore {
   private staged = new Map<string, Uint8Array | null>();
   /** Full path to blob sha, as the branch's last commit has it. */
   private tree: Map<string, string> | null = null;
+  /** The repository the paths live in: the name as typed, or the
+   *  account's when the owner wasn't spelled out. */
+  private repo: string;
   constructor(
     private config: Config,
     private credentials: Credentials,
@@ -56,6 +59,9 @@ export class GitHubStore implements ObjectStore {
     private sleep: (ms: number) => Promise<unknown> = pause,
   ) {
     if (!credentials.secret) throw new SyncError("credentialsRequired");
+    this.repo = config.bucket.includes("/")
+      ? config.bucket
+      : `${credentials.account}/${config.bucket}`;
   }
   now(): number {
     return Date.now();
@@ -68,7 +74,7 @@ export class GitHubStore implements ObjectStore {
     return undefined;
   }
   private url(path: string) {
-    return `${this.config.endpoint}/repos/${this.config.bucket}${path}`;
+    return `${this.config.endpoint}/repos/${this.repo}${path}`;
   }
   /** One API call, sent again while GitHub is busy or out of reach;
    *  waiting as long as it asks, and no longer than a sync can. */
@@ -126,7 +132,8 @@ export class GitHubStore implements ObjectStore {
   }
   private full(key: string): string {
     if (!relativePath(key)) throw new SyncError("invalidPath");
-    return `${this.config.prefix}/${key}`;
+    // The prefix is empty when the repository is the workspace whole.
+    return this.config.prefix ? `${this.config.prefix}/${key}` : key;
   }
   /** The branch to sync, from the repository's own default. */
   private async branch(): Promise<string> {
@@ -172,7 +179,7 @@ export class GitHubStore implements ObjectStore {
       const data = (await res.json()) as {
         tree?: { path?: string; sha?: string; type?: string }[];
       };
-      const base = `${this.config.prefix}/`;
+      const base = this.config.prefix ? `${this.config.prefix}/` : "";
       for (const item of data?.tree ?? [])
         if (item.type === "blob" && item.path?.startsWith(base))
           map.set(item.path, item.sha!);

@@ -98,7 +98,7 @@ describe("a GitHub repository", () => {
       call.path.startsWith("/contents/"),
     );
     expect(contents.length).toBe(1);
-    expect(contents[0].path).toBe("/contents/textus/notes/v1/lock.json");
+    expect(contents[0].path).toBe("/contents/v1/lock.json");
     // The next writes go through the git database.
     await s.put("v1/head.json", bytes("{}"));
     await s.commit("Textus sync");
@@ -131,7 +131,7 @@ describe("a GitHub repository", () => {
     const trees = fake.calls.filter((call) => call.path === "/git/trees");
     expect(
       trees.at(-1)?.body.tree.map((item: { path: string }) =>
-        item.path.replace("textus/notes/", ""),
+        item.path.replace(/^textus\/notes\//, ""),
       ),
     ).toEqual(["v1/probes/old.json"]);
     await s.put("v1/head.json", bytes("{}"));
@@ -139,7 +139,7 @@ describe("a GitHub repository", () => {
     const sync = fake.calls.filter((call) => call.path === "/git/trees").at(-1);
     expect(
       sync?.body.tree.map((item: { path: string; sha: string | null }) => [
-        item.path.replace("textus/notes/", ""),
+        item.path.replace(/^textus\/notes\//, ""),
         item.sha !== null,
       ]),
     ).toEqual([["v1/head.json", true]]);
@@ -159,13 +159,32 @@ describe("a GitHub repository", () => {
     expect(await s.has("v1/only.txt")).toBe(false);
   });
 
-  it("refuses a bucket that is not owner/repository", () => {
+  it("takes a repository by name or owner/repository, nothing else", () => {
+    expect(
+      normalizeConfig({ provider: "github", bucket: "notes" }).bucket,
+    ).toBe("notes");
+    expect(
+      normalizeConfig({ provider: "github", bucket: "owner/notes" }).bucket,
+    ).toBe("owner/notes");
     expect(() =>
       normalizeConfig({
         provider: "github",
-        bucket: "just-a-name",
+        bucket: "owner/notes/extra",
         prefix: "textus/notes",
-        }),
+      }),
     ).toThrow(SyncError);
+    expect(() =>
+      normalizeConfig({
+        provider: "github",
+        bucket: "..",
+        prefix: "textus/notes",
+      }),
+    ).toThrow(SyncError);
+  });
+
+  it("binds the whole repository: no software subfolder", () => {
+    expect(normalizeConfig({ provider: "github", bucket: "notes" }).prefix).toBe(
+      "",
+    );
   });
 });

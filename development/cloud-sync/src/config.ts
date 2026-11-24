@@ -8,6 +8,12 @@ import {
   type KeepDays,
 } from "./model";
 
+/** The folder every workspace lives under in a git repository. */
+/** A GitHub repository is bound to the workspace whole: its files live at
+ *  the repository's root, where other tools (Obsidian Git and the like)
+ *  see them, so no software folder is added. */
+export const GIT_PREFIX = "";
+
 export const defaults: Config = {
   provider: "s3",
   endpoint: "",
@@ -74,7 +80,8 @@ export function normalizeConfig(
   c.prefix = String(c.prefix)
     .trim()
     .replace(/^\/+|\/+$/g, "");
-  if (!relativePath(c.prefix)) throw new SyncError("invalidPrefix");
+  if (c.prefix && !relativePath(c.prefix))
+    throw new SyncError("invalidPrefix");
   c.region = String(c.region).trim() || "us-east-1";
   if (!/^[a-z0-9-]+$/.test(c.region)) throw new SyncError("invalidConfig");
   c.bucket = String(c.bucket).trim();
@@ -90,8 +97,13 @@ export function normalizeConfig(
   } else if (spec.transport === "git") {
     c.region = "";
     c.pathStyle = false;
-    if (!/^[\w.-]+\/[\w.-]+$/.test(c.bucket) || c.bucket.includes(".."))
+    // The repository name alone is enough - the owner comes from the
+    // account - but a full owner/repo is kept as it is.
+    if (!/^[\w.-]+(\/[\w.-]+)?$/.test(c.bucket) || c.bucket.includes(".."))
       throw new SyncError("invalidRepo");
+    // The repository is the address; every workspace lives under the same
+    // folder in it, so there is no directory to pick.
+    c.prefix = GIT_PREFIX;
   } else {
     c.region = "";
     c.bucket = "";

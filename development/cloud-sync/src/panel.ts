@@ -153,12 +153,16 @@ function formToggles() {
   element("bucket-label").textContent = api.t(git ? "repo" : "bucket");
   element("s3-more").hidden = provider !== "s3";
   element("endpoint-field").hidden = provider === "nutstore" || git;
+  // The repository is the address and every workspace lives under the
+  // same folder in it: no directory to pick.
+  element("prefix-field").hidden = git;
   element("nutstore-help").hidden = provider !== "nutstore";
   element("github-help").hidden = !git;
   const [account, secret] = signIn[provider] ?? signIn.s3;
   element("account-label").textContent = api.t(account);
   element("secret-label").textContent = api.t(secret);
   input("endpoint").required = provider !== "s3" && !git;
+  input("prefix").required = !git;
   if (provider === "nutstore")
     input("endpoint").value = providers.nutstore.endpoint;
   input("bucket").required = provider === "s3" || git;
@@ -194,6 +198,7 @@ function show() {
   element("c-bucket-label").textContent = api.t(
     config.provider === "github" ? "repo" : "bucket",
   );
+  element("c-prefix-row").hidden = config.provider === "github";
   element("c-account-label").textContent = api.t(
     (signIn[config.provider] ?? signIn.s3)[0],
   );

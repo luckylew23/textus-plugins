@@ -156,6 +156,7 @@ function folderKey(root, platform) {
 }
 
 // development/cloud-sync/src/config.ts
+var GIT_PREFIX = "";
 var defaults = {
   provider: "s3",
   endpoint: "",
@@ -200,7 +201,8 @@ function normalizeConfig(input, device = deviceOf()) {
   if (!Object.hasOwn(providers, c.provider))
     throw new SyncError("invalidConfig");
   c.prefix = String(c.prefix).trim().replace(/^\/+|\/+$/g, "");
-  if (!relativePath(c.prefix)) throw new SyncError("invalidPrefix");
+  if (c.prefix && !relativePath(c.prefix))
+    throw new SyncError("invalidPrefix");
   c.region = String(c.region).trim() || "us-east-1";
   if (!/^[a-z0-9-]+$/.test(c.region)) throw new SyncError("invalidConfig");
   c.bucket = String(c.bucket).trim();
@@ -213,8 +215,9 @@ function normalizeConfig(input, device = deviceOf()) {
   } else if (spec.transport === "git") {
     c.region = "";
     c.pathStyle = false;
-    if (!/^[\w.-]+\/[\w.-]+$/.test(c.bucket) || c.bucket.includes(".."))
+    if (!/^[\w.-]+(\/[\w.-]+)?$/.test(c.bucket) || c.bucket.includes(".."))
       throw new SyncError("invalidRepo");
+    c.prefix = GIT_PREFIX;
   } else {
     c.region = "";
     c.bucket = "";
@@ -2854,7 +2857,11 @@ var GitHubStore = class {
     __publicField(this, "staged", /* @__PURE__ */ new Map());
     /** Full path to blob sha, as the branch's last commit has it. */
     __publicField(this, "tree", null);
+    /** The repository the paths live in: the name as typed, or the
+     *  account's when the owner wasn't spelled out. */
+    __publicField(this, "repo");
     if (!credentials.secret) throw new SyncError("credentialsRequired");
+    this.repo = config.bucket.includes("/") ? config.bucket : `${credentials.account}/${config.bucket}`;
   }
   now() {
     return Date.now();
@@ -2867,7 +2874,7 @@ var GitHubStore = class {
     return void 0;
   }
   url(path) {
-    return `${this.config.endpoint}/repos/${this.config.bucket}${path}`;
+    return `${this.config.endpoint}/repos/${this.repo}${path}`;
   }
   /** One API call, sent again while GitHub is busy or out of reach;
    *  waiting as long as it asks, and no longer than a sync can. */
@@ -2916,7 +2923,7 @@ var GitHubStore = class {
   }
   full(key) {
     if (!relativePath(key)) throw new SyncError("invalidPath");
-    return `${this.config.prefix}/${key}`;
+    return this.config.prefix ? `${this.config.prefix}/${key}` : key;
   }
   /** The branch to sync, from the repository's own default. */
   async branch() {
@@ -2956,7 +2963,7 @@ var GitHubStore = class {
       );
       this.require(res);
       const data = await res.json();
-      const base = `${this.config.prefix}/`;
+      const base = this.config.prefix ? `${this.config.prefix}/` : "";
       for (const item of data?.tree ?? [])
         if (item.type === "blob" && item.path?.startsWith(base))
           map.set(item.path, item.sha);
