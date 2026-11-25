@@ -342,6 +342,25 @@ describe("storage protocols over HTTP", () => {
     await store.remove("v1/blocks/ab/c");
     expect(deletes).toBe(2);
   });
+  it("carries why a request failed, for the plugin's log", async () => {
+    const store = new RemoteStore(
+      normalizeConfig({
+        provider: "webdav",
+        endpoint: "https://store.example/dav",
+        bucket: "my-bucket",
+        prefix: `notes/${crypto.randomUUID()}`,
+      }),
+      { account, secret },
+      async () => {
+        throw Error("error sending request for url (https://store.example/x)");
+      },
+      async () => {},
+    );
+    const failed = await store.remove("v1/blocks/ab/c").catch((e) => e);
+    expect(failed).toBeInstanceOf(SyncError);
+    expect((failed as SyncError).code).toBe("networkError");
+    expect((failed as SyncError).args[0]).toContain("error sending request");
+  });
   it("syncs into Nutstore folders that already exist", async () => {
     mode = "nutstoreFolders";
     try {

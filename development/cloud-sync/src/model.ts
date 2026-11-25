@@ -182,6 +182,14 @@ export class SyncError extends Error {
     this.name = "SyncError";
   }
 }
+/** What a rejected request said, for the log: the bridge's error text, or
+ *  an empty string when the rejection carried none. The panel keeps its own
+ *  short line; this is what a developer reads on the plugin's page. */
+export function why(error: unknown): string {
+  const text =
+    error instanceof Error ? error.message : String(error ?? "").trim();
+  return text.slice(0, 300);
+}
 export const encode = (value: unknown) =>
   new TextEncoder().encode(JSON.stringify(value));
 export const emptyBase = (): Base => ({

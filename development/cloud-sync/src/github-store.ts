@@ -3,6 +3,7 @@ import { relativePath } from "./config";
 import {
   LOCK,
   SyncError,
+  why,
   type Config,
   type Credentials,
   type ObjectStore,
@@ -98,8 +99,12 @@ export class GitHubStore implements ObjectStore {
             "X-GitHub-Api-Version": "2022-11-28",
           },
         });
-      } catch {
-        if (attempt + 1 >= ATTEMPTS) throw new SyncError("networkError");
+      } catch (error) {
+        // The reason travels with the error so the plugin's log can say why;
+        // the panel keeps its short line, as a bridge's text means little
+        // there and can name the address it failed on.
+        if (attempt + 1 >= ATTEMPTS)
+          throw new SyncError("networkError", [why(error)]);
         await this.sleep(backoff(attempt));
         continue;
       }
@@ -127,7 +132,6 @@ export class GitHubStore implements ObjectStore {
       throw new SyncError("permissionError", [response.status]);
     // A 404 here means a repository or branch we just read is gone, not a
     // file: `get` and `has` answer through the tree instead of this.
-    throw new SyncError("httpError", [response.status]);
     throw new SyncError("httpError", [response.status]);
   }
   private full(key: string): string {

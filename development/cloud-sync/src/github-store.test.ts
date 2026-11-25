@@ -187,4 +187,21 @@ describe("a GitHub repository", () => {
       "",
     );
   });
+
+  it("carries why a request failed, for the plugin's log", async () => {
+    const s = new GitHubStore(
+      normalizeConfig({ provider: "github", bucket: "owner/notes" }),
+      { account: "owner", secret: "test-only-secret" },
+      async () => {
+        throw Error("error sending request for url (https://api.github.com/x)");
+      },
+      async () => {},
+    );
+    const failed = await s.create("note.md", bytes("x")).catch((e) => e);
+    expect(failed).toBeInstanceOf(SyncError);
+    expect((failed as SyncError).code).toBe("networkError");
+    expect((failed as SyncError).args[0]).toBe(
+      "error sending request for url (https://api.github.com/x)",
+    );
+  });
 });

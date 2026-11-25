@@ -4,6 +4,7 @@ import { providers, relativePath } from "./config";
 import {
   LOCK,
   SyncError,
+  why,
   type Config,
   type Credentials,
   type ObjectStore,
@@ -113,9 +114,11 @@ export class RemoteStore implements ObjectStore {
       let response: Response;
       try {
         response = await this.fetch(url, { method, body, headers });
-      } catch {
+      } catch (error) {
+        // The reason goes to the plugin's log with the error; the panel keeps
+        // its short line.
         if (!repeat || attempt + 1 >= ATTEMPTS)
-          throw new SyncError("networkError");
+          throw new SyncError("networkError", [why(error)]);
         unsure?.();
         await this.sleep(backoff(attempt));
         continue;

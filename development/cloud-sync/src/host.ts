@@ -91,8 +91,9 @@ class Controller implements Host {
     if (e.code === "cancelled" && this.lifecycle?.away)
       this.message("pausedAway");
     else this.message(e.code, true, ...e.args);
-    // Provider response bodies and raw network errors can contain credentials.
-    this.ctx.log.warn(e.code);
+    // Our own short reasons only: a body could carry credentials.
+    const said = e.args.length > 0 ? `: ${e.args.join(" ")}` : "";
+    this.ctx.log.warn(`${e.code}${said}`);
     return e.code;
   }
   /** A sync; one stopped before deleting many files from the cloud asks

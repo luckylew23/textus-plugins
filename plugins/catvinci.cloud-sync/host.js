@@ -50,6 +50,10 @@ var SyncError = class extends Error {
     this.name = "SyncError";
   }
 };
+function why(error) {
+  const text = error instanceof Error ? error.message : String(error ?? "").trim();
+  return text.slice(0, 300);
+}
 var encode = (value) => new TextEncoder().encode(JSON.stringify(value));
 var snapshotKey = (revision) => `v1/snapshots/${revision}.json`;
 var blockKey = (hash3) => `v1/blocks/${hash3.slice(0, 2)}/${hash3}`;
@@ -1900,9 +1904,9 @@ var RemoteStore = class {
       let response;
       try {
         response = await this.fetch(url, { method, body, headers });
-      } catch {
+      } catch (error) {
         if (!repeat || attempt + 1 >= ATTEMPTS)
-          throw new SyncError("networkError");
+          throw new SyncError("networkError", [why(error)]);
         unsure?.();
         await this.sleep(backoff(attempt));
         continue;
@@ -2895,8 +2899,9 @@ var GitHubStore = class {
             "X-GitHub-Api-Version": "2022-11-28"
           }
         });
-      } catch {
-        if (attempt + 1 >= ATTEMPTS) throw new SyncError("networkError");
+      } catch (error) {
+        if (attempt + 1 >= ATTEMPTS)
+          throw new SyncError("networkError", [why(error)]);
         await this.sleep(backoff(attempt));
         continue;
       }
@@ -2919,7 +2924,6 @@ var GitHubStore = class {
     if (response.status >= 200 && response.status < 300) return;
     if ([401, 403].includes(response.status))
       throw new SyncError("permissionError", [response.status]);
-    throw new SyncError("httpError", [response.status]);
     throw new SyncError("httpError", [response.status]);
   }
   full(key) {
@@ -3573,7 +3577,8 @@ var Controller = class {
     if (e.code === "cancelled" && this.lifecycle?.away)
       this.message("pausedAway");
     else this.message(e.code, true, ...e.args);
-    this.ctx.log.warn(e.code);
+    const said = e.args.length > 0 ? `: ${e.args.join(" ")}` : "";
+    this.ctx.log.warn(`${e.code}${said}`);
     return e.code;
   }
   /** A sync; one stopped before deleting many files from the cloud asks
