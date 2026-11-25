@@ -48,10 +48,9 @@ const github = (files: Record<string, string> = {}) => {
       });
     if (method === "GET" && path.startsWith("/git/blobs/")) {
       const sha = decodeURIComponent(path.slice("/git/blobs/".length));
+      // The raw media type, as the store asks for it: bytes, no base64.
       return blobs.has(sha)
-        ? json(200, {
-            content: Buffer.from(blobs.get(sha)!).toString("base64"),
-          })
+        ? (new Response(blobs.get(sha)!, { status: 200 }) as never)
         : json(404, {});
     }
     if (method === "POST" && path === "/git/blobs") {

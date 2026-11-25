@@ -2839,12 +2839,6 @@ var base64 = (bytes) => {
     binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
   return btoa(binary);
 };
-var unbase64 = (value) => {
-  const binary = atob(value.replace(/\s/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
-  return bytes;
-};
 var GitHubStore = class {
   constructor(config, credentials, fetch2, sleep = pause3) {
     this.config = config;
@@ -2883,7 +2877,7 @@ var GitHubStore = class {
   }
   /** One API call, sent again while GitHub is busy or out of reach;
    *  waiting as long as it asks, and no longer than a sync can. */
-  async request(method, path, body) {
+  async request(method, path, body, accept = "application/vnd.github+json") {
     for (let attempt = 0; ; attempt++) {
       const quiet = this.quietUntil - Date.now();
       if (quiet > 0) await this.sleep(quiet);
@@ -2894,12 +2888,13 @@ var GitHubStore = class {
           body: body === void 0 ? void 0 : JSON.stringify(body),
           headers: {
             Authorization: `Bearer ${this.credentials.secret}`,
-            Accept: "application/vnd.github+json",
+            Accept: accept,
             "Content-Type": "application/json",
             "X-GitHub-Api-Version": "2022-11-28"
           }
         });
       } catch (error) {
+        if (/too big/i.test(why(error))) throw new SyncError("tooLarge");
         if (attempt + 1 >= ATTEMPTS)
           throw new SyncError("networkError", [why(error)]);
         await this.sleep(backoff(attempt));
@@ -2977,10 +2972,14 @@ var GitHubStore = class {
     return map;
   }
   async blobBytes(sha) {
-    const res = await this.request("GET", `/git/blobs/${sha}`);
+    const res = await this.request(
+      "GET",
+      `/git/blobs/${sha}`,
+      void 0,
+      "application/vnd.github.raw"
+    );
     this.require(res);
-    const data = await res.json();
-    return unbase64(data?.content ?? "");
+    return res.bytes();
   }
   async get(key) {
     const path = this.full(key);

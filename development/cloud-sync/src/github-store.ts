@@ -26,12 +26,6 @@ const base64 = (bytes: Uint8Array) => {
     binary += String.fromCharCode(...bytes.subarray(at, at + 8192));
   return btoa(binary);
 };
-const unbase64 = (value: string) => {
-  const binary = atob(value.replace(/\s/g, ""));
-  const bytes = new Uint8Array(binary.length);
-  for (let at = 0; at < binary.length; at++) bytes[at] = binary.charCodeAt(at);
-  return bytes;
-};
 
 /** A GitHub repository as the same store the S3 and WebDAV services
  *  offer: every key lives at `prefix/key` on the repository's default
@@ -83,6 +77,7 @@ export class GitHubStore implements ObjectStore {
     method: string,
     path: string,
     body?: unknown,
+    accept = "application/vnd.github+json",
   ): Promise<Response> {
     for (let attempt = 0; ; attempt++) {
       const quiet = this.quietUntil - Date.now();
@@ -94,7 +89,7 @@ export class GitHubStore implements ObjectStore {
           body: body === undefined ? undefined : JSON.stringify(body),
           headers: {
             Authorization: `Bearer ${this.credentials.secret}`,
-            Accept: "application/vnd.github+json",
+            Accept: accept,
             "Content-Type": "application/json",
             "X-GitHub-Api-Version": "2022-11-28",
           },
@@ -103,6 +98,9 @@ export class GitHubStore implements ObjectStore {
         // The reason travels with the error so the plugin's log can say why;
         // the panel keeps its short line, as a bridge's text means little
         // there and can name the address it failed on.
+        // A response past what the bridge carries is not the network:
+        // saying so saves the wait of three more tries that must fail too.
+        if (/too big/i.test(why(error))) throw new SyncError("tooLarge");
         if (attempt + 1 >= ATTEMPTS)
           throw new SyncError("networkError", [why(error)]);
         await this.sleep(backoff(attempt));
@@ -192,10 +190,17 @@ export class GitHubStore implements ObjectStore {
     return map;
   }
   private async blobBytes(sha: string): Promise<Uint8Array> {
-    const res = await this.request("GET", `/git/blobs/${sha}`);
+    // The raw bytes rather than the base64 JSON GitHub sends by default:
+    // a file of 33 MiB then travels as 33 MiB, not 44, and nothing holds
+    // a string that large in memory while decoding it.
+    const res = await this.request(
+      "GET",
+      `/git/blobs/${sha}`,
+      undefined,
+      "application/vnd.github.raw",
+    );
     this.require(res);
-    const data = (await res.json()) as { content?: string };
-    return unbase64(data?.content ?? "");
+    return res.bytes();
   }
   async get(key: string): Promise<Uint8Array | null> {
     const path = this.full(key);

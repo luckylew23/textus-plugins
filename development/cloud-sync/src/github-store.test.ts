@@ -204,4 +204,21 @@ describe("a GitHub repository", () => {
       "error sending request for url (https://api.github.com/x)",
     );
   });
+
+  it("says a response the bridge can't carry is too large, at once", async () => {
+    let asked = 0;
+    const s = new GitHubStore(
+      normalizeConfig({ provider: "github", bucket: "owner/notes" }),
+      { account: "owner", secret: "test-only-secret" },
+      async () => {
+        asked++;
+        throw Error("plugin_http: The response is too big.");
+      },
+      async () => {},
+    );
+    const failed = await s.mirrorBlob("abc").catch((e) => e);
+    expect((failed as SyncError).code).toBe("tooLarge");
+    // Not the network: asking again would fail the same way.
+    expect(asked).toBe(1);
+  });
 });
