@@ -3577,8 +3577,9 @@ var Controller = class {
     if (e.code === "cancelled" && this.lifecycle?.away)
       this.message("pausedAway");
     else this.message(e.code, true, ...e.args);
-    const said = e.args.length > 0 ? `: ${e.args.join(" ")}` : "";
-    this.ctx.log.warn(`${e.code}${said}`);
+    const said = e.args.length > 0 ? `${e.code}: ${e.args.join(" ")}` : e.code;
+    this.ctx.log.warn(said);
+    void this.ctx.storage.global.set("last-failure", { at: Date.now(), said });
     return e.code;
   }
   /** A sync; one stopped before deleting many files from the cloud asks
