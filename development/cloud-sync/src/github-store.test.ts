@@ -205,7 +205,7 @@ describe("a GitHub repository", () => {
     );
   });
 
-  it("says a response the bridge can't carry is too large, at once", async () => {
+  it("names a response past what the bridge carries, at once", async () => {
     let asked = 0;
     const s = new GitHubStore(
       normalizeConfig({ provider: "github", bucket: "owner/notes" }),
@@ -217,7 +217,8 @@ describe("a GitHub repository", () => {
       async () => {},
     );
     const failed = await s.mirrorBlob("abc").catch((e) => e);
-    expect((failed as SyncError).code).toBe("tooLarge");
+    // Its own code: not the sync's file limit, which the file may be under.
+    expect((failed as SyncError).code).toBe("bridgeTooLarge");
     // Not the network: asking again would fail the same way.
     expect(asked).toBe(1);
   });

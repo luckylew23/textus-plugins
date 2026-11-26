@@ -117,6 +117,22 @@ export async function mirrorSync({
     expected: string | null;
     from: string;
   }[] = [];
+  /** Files this Textus build's plugin bridge cannot carry, by path: past
+   *  its own size limit the host answers "too big" instead of the bytes.
+   *  The file is left exactly as it is on both sides, and named in the
+   *  result, so one unreachable file cannot stop the rest of a sync. */
+  const unreachable: string[] = [];
+  /** The branch's bytes, or nothing when the bridge refused to carry them. */
+  const pull = async (path: string, sha: string) => {
+    try {
+      return await store.mirrorBlob(sha);
+    } catch (error) {
+      if (!(error instanceof SyncError) || error.code !== "bridgeTooLarge")
+        throw error;
+      unreachable.push(path);
+      return undefined;
+    }
+  };
 
   const next: MirrorBase = {};
   const steps = [
@@ -155,12 +171,8 @@ export async function mirrorSync({
         result.removed++;
       } else {
         // Changed there while deleted here: the change comes in.
-        downloads.push({
-          path,
-          bytes: await store.mirrorBlob(theirs),
-          expected: null,
-          from: theirs,
-        });
+        const bytes = await pull(path, theirs);
+        if (bytes) downloads.push({ path, bytes, expected: null, from: theirs });
       }
       continue;
     }
@@ -178,13 +190,15 @@ export async function mirrorSync({
         next[path] = { local: mine, remote: theirs };
         result.unchanged++;
       } else {
+        const bytes = await pull(path, theirs);
+        if (!bytes) {
+          // The branch's version cannot come in, so the folder's must not
+          // go out either: the file stays as it is on both sides.
+          uploads.delete(path);
+          continue;
+        }
         const copy = conflictName(path, new Date());
-        downloads.push({
-          path: copy,
-          bytes: await store.mirrorBlob(theirs),
-          expected: null,
-          from: theirs,
-        });
+        downloads.push({ path: copy, bytes, expected: null, from: theirs });
         result.conflicts.push(copy);
       }
       continue;
@@ -200,17 +214,14 @@ export async function mirrorSync({
     }
     if (mine === remembered?.local) {
       // Only the branch changed it: the change comes in.
-      downloads.push({
-        path,
-        bytes: await store.mirrorBlob(theirs),
-        expected: mine,
-        from: theirs,
-      });
+      const bytes = await pull(path, theirs);
+      if (bytes) downloads.push({ path, bytes, expected: mine, from: theirs });
       continue;
     }
     // Both changed: the folder wins, the branch's version is kept beside
     // it as a conflict copy; both go out with this commit and the next.
-    const bytes = await store.mirrorBlob(theirs);
+    const bytes = await pull(path, theirs);
+    if (!bytes) continue; // no copy can be made: the file stays as it is
     const copy = conflictName(path, new Date());
     downloads.push({ path: copy, bytes, expected: null, from: theirs });
     await send(path);
@@ -253,6 +264,9 @@ export async function mirrorSync({
   // Deferred work stays out of the base, so the next sync sees the file
   // as still to do.
   for (const path of result.deferred) delete next[path];
+  // A file the bridge cannot carry stays out of the base too: nothing was
+  // synced, and the next sync must try it again rather than call it equal.
+  if (unreachable.length) result.unreachable = unreachable.sort();
   await saveBase(next);
   return result;
 }

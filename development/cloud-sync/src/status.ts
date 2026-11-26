@@ -68,6 +68,7 @@ export function doneText(
       ["doneDeferred", result.deferred.length],
       ["doneNotTrashed", result.notTrashed.length],
       ["doneTooLarge", result.tooLarge?.length ?? 0],
+      ["doneBridgeTooLarge", result.unreachable?.length ?? 0],
     ] as const
   )
     .filter(([, n]) => n > 0)

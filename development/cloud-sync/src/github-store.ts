@@ -100,7 +100,9 @@ export class GitHubStore implements ObjectStore {
         // there and can name the address it failed on.
         // A response past what the bridge carries is not the network:
         // saying so saves the wait of three more tries that must fail too.
-        if (/too big/i.test(why(error))) throw new SyncError("tooLarge");
+        // It is not the sync's own limit either - the file may well be
+        // under it - so it names the wall it hit, and the caller walks on.
+        if (/too big/i.test(why(error))) throw new SyncError("bridgeTooLarge");
         if (attempt + 1 >= ATTEMPTS)
           throw new SyncError("networkError", [why(error)]);
         await this.sleep(backoff(attempt));

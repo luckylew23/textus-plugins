@@ -368,13 +368,26 @@ function showResult(result?: Result, limit = 0) {
     container.append(title, list);
   }
   const large = result?.tooLarge ?? [];
-  if (!large.length) return;
+  foldList(container, api.t("tooLargeFiles", large.length, limit), large);
+  // Not the same reason: this Textus build's bridge cannot carry these at
+  // any size, so nothing of them was synced, and the folder keeps them.
+  const unreachable = result?.unreachable ?? [];
+  foldList(
+    container,
+    api.t("bridgeTooLargeFiles", unreachable.length),
+    unreachable,
+  );
+}
+
+/** Files left out, folded under the one line that says why. */
+function foldList(container: HTMLElement, summary: string, paths: string[]) {
+  if (!paths.length) return;
   const fold = document.createElement("details");
   fold.className = "tx-disclosure";
   const line = document.createElement("summary");
-  line.textContent = api.t("tooLargeFiles", large.length, limit);
+  line.textContent = summary;
   const list = document.createElement("ul");
-  for (const path of large) {
+  for (const path of paths) {
     const row = document.createElement("li");
     row.textContent = path;
     list.append(row);

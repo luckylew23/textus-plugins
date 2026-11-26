@@ -303,8 +303,8 @@
       if (!entries?.length) continue;
       const title = document.createElement("h3");
       title.textContent = api.t(key);
-      const list2 = document.createElement(key === "conflicts" ? "div" : "ul");
-      if (key === "conflicts") list2.className = "tx-list";
+      const list = document.createElement(key === "conflicts" ? "div" : "ul");
+      if (key === "conflicts") list.className = "tx-list";
       for (const path of entries) {
         const row = document.createElement(key === "conflicts" ? "button" : "li");
         row.textContent = path;
@@ -313,18 +313,27 @@
           row.className = "tx-list-row";
           row.onclick = () => api.postMessage({ type: "openConflict", path });
         }
-        list2.append(row);
+        list.append(row);
       }
-      container.append(title, list2);
+      container.append(title, list);
     }
     const large = result?.tooLarge ?? [];
-    if (!large.length) return;
+    foldList(container, api.t("tooLargeFiles", large.length, limit), large);
+    const unreachable = result?.unreachable ?? [];
+    foldList(
+      container,
+      api.t("bridgeTooLargeFiles", unreachable.length),
+      unreachable
+    );
+  }
+  function foldList(container, summary, paths) {
+    if (!paths.length) return;
     const fold = document.createElement("details");
     fold.className = "tx-disclosure";
     const line = document.createElement("summary");
-    line.textContent = api.t("tooLargeFiles", large.length, limit);
+    line.textContent = summary;
     const list = document.createElement("ul");
-    for (const path of large) {
+    for (const path of paths) {
       const row = document.createElement("li");
       row.textContent = path;
       list.append(row);

@@ -2,7 +2,7 @@
   "id": "catvinci.cloud-sync",
   "name": "%name%",
   "description": "%description%",
-  "version": "0.9.0",
+  "version": "0.9.1",
   "publisher": "catvinci",
   "author": "CatVinci Studio",
   "license": "MIT",
@@ -252,6 +252,9 @@
       "largestFile": "Largest file to sync",
       "tooLargeFiles": "Over {1} MB, not synced on this device: {0}",
       "doneTooLarge": "too large {0}",
+      "bridgeTooLarge": "A file is bigger than this Textus version can bring in: the app's plugin bridge refuses responses past its own limit. Update Textus, or keep the file out of this workspace.",
+      "bridgeTooLargeFiles": "Too big for this Textus version to bring in, left as they are: {0}",
+      "doneBridgeTooLarge": "beyond this Textus {0}",
       "icloudFolder": "This folder is in iCloud Drive, which already syncs it: Cloud Sync isn't needed here."
     },
     "zh": {
@@ -433,6 +436,9 @@
       "largestFile": "同步的最大文件",
       "tooLargeFiles": "{0} 个文件超过 {1} MB，这台设备没有同步",
       "doneTooLarge": "过大 {0}",
+      "bridgeTooLarge": "有文件超过这个 Textus 版本能取回的大小：应用给插件的响应上限拒绝了它。请升级 Textus，或把这个文件放在工作区之外。",
+      "bridgeTooLargeFiles": "超过这个 Textus 版本能取回的大小，原样留在这台设备：{0}",
+      "doneBridgeTooLarge": "超出此版本 {0}",
       "icloudFolder": "这个文件夹在 iCloud 云盘里，已经由 iCloud 同步，这里不需要再开云同步。"
     },
     "zh-Hant": {
@@ -614,6 +620,9 @@
       "largestFile": "同步的最大檔案",
       "tooLargeFiles": "{0} 個檔案超過 {1} MB，這台裝置沒有同步",
       "doneTooLarge": "過大 {0}",
+      "bridgeTooLarge": "有檔案超過這個 Textus 版本能取回的大小：應用程式給外掛的回應上限拒絕了它。請升級 Textus，或把這個檔案放在工作區之外。",
+      "bridgeTooLargeFiles": "超過這個 Textus 版本能取回的大小，原樣留在這台裝置：{0}",
+      "doneBridgeTooLarge": "超出此版本 {0}",
       "icloudFolder": "這個資料夾在 iCloud 雲碟裡，已經由 iCloud 同步，這裡不需要再開啟雲端同步。"
     },
     "ja": {
@@ -795,6 +804,9 @@
       "largestFile": "同期するファイルの上限サイズ",
       "tooLargeFiles": "{1} MB を超える {0} 個のファイルはこの端末では同期していません",
       "doneTooLarge": "大きすぎ {0}",
+      "bridgeTooLarge": "このバージョンの Textus が受け取れない大きさのファイルがあります。アプリがプラグインへ返す応答の上限に引っかかっています。Textus を更新するか、そのファイルをワークスペースの外に置いてください。",
+      "bridgeTooLargeFiles": "このバージョンの Textus が受け取れない大きさのため、そのまま残しました: {0}",
+      "doneBridgeTooLarge": "この版では受け取れない {0}",
       "icloudFolder": "このフォルダは iCloud Drive にあり、すでに iCloud が同期しています。ここでクラウド同期を使う必要はありません。"
     },
     "ko": {
@@ -976,6 +988,9 @@
       "largestFile": "동기화할 최대 파일 크기",
       "tooLargeFiles": "{1}MB를 넘는 파일 {0}개는 이 기기에서 동기화하지 않았습니다",
       "doneTooLarge": "너무 큼 {0}",
+      "bridgeTooLarge": "이 Textus 버전이 받아올 수 없는 크기의 파일이 있습니다. 앱이 플러그인에 돌려주는 응답 한도에 걸렸습니다. Textus를 업데이트하거나 이 파일을 작업 공간 밖에 두세요.",
+      "bridgeTooLargeFiles": "이 Textus 버전이 받아올 수 없는 크기라 그대로 두었습니다: {0}",
+      "doneBridgeTooLarge": "이 버전에서는 못 받음 {0}",
       "icloudFolder": "이 폴더는 iCloud Drive에 있어 이미 iCloud가 동기화합니다. 여기서는 클라우드 동기화가 필요 없습니다."
     },
     "es": {
@@ -1157,6 +1172,9 @@
       "largestFile": "Archivo más grande que se sincroniza",
       "tooLargeFiles": "Más de {1} MB, sin sincronizar en este dispositivo: {0}",
       "doneTooLarge": "demasiado grandes {0}",
+      "bridgeTooLarge": "Un archivo supera lo que esta versión de Textus puede traer: el puente de plugins de la app rechaza respuestas por encima de su límite. Actualiza Textus o deja el archivo fuera de este espacio de trabajo.",
+      "bridgeTooLargeFiles": "Demasiado grande para que esta versión de Textus lo traiga; se deja como está: {0}",
+      "doneBridgeTooLarge": "demasiado grande para esta versión {0}",
       "icloudFolder": "Esta carpeta está en iCloud Drive, que ya la sincroniza: aquí no hace falta la sincronización en la nube."
     },
     "fr": {
@@ -1338,6 +1356,9 @@
       "largestFile": "Plus gros fichier synchronisé",
       "tooLargeFiles": "Plus de {1} Mo, non synchronisés sur cet appareil : {0}",
       "doneTooLarge": "trop volumineux {0}",
+      "bridgeTooLarge": "Un fichier dépasse ce que cette version de Textus peut rapporter : le pont de plugins de l’app refuse les réponses au-delà de sa limite. Mettez Textus à jour ou laissez ce fichier hors de cet espace de travail.",
+      "bridgeTooLargeFiles": "Trop gros pour que cette version de Textus le rapporte, laissé tel quel : {0}",
+      "doneBridgeTooLarge": "trop gros pour cette version {0}",
       "icloudFolder": "Ce dossier est dans iCloud Drive, qui le synchronise déjà : la synchro cloud n’est pas utile ici."
     },
     "de": {
@@ -1519,6 +1540,9 @@
       "largestFile": "Größte synchronisierte Datei",
       "tooLargeFiles": "Über {1} MB, auf diesem Gerät nicht synchronisiert: {0}",
       "doneTooLarge": "zu groß {0}",
+      "bridgeTooLarge": "Eine Datei ist größer, als diese Textus-Version hereinholen kann: Die Plugin-Brücke der App lehnt Antworten über ihrem Limit ab. Aktualisiere Textus oder lass die Datei außerhalb dieses Arbeitsbereichs.",
+      "bridgeTooLargeFiles": "Zu groß für diese Textus-Version, unverändert gelassen: {0}",
+      "doneBridgeTooLarge": "zu groß für diese Version {0}",
       "icloudFolder": "Dieser Ordner liegt in iCloud Drive, das ihn bereits synchronisiert: Cloud-Sync brauchst du hier nicht."
     },
     "ru": {
@@ -1700,6 +1724,9 @@
       "largestFile": "Наибольший синхронизируемый файл",
       "tooLargeFiles": "Больше {1} МБ, не синхронизируются на этом устройстве: {0}",
       "doneTooLarge": "слишком большие {0}",
+      "bridgeTooLarge": "Файл больше, чем эта версия Textus может принять: мост плагинов в приложении отклоняет ответы сверх своего лимита. Обновите Textus или держите файл вне рабочей области.",
+      "bridgeTooLargeFiles": "Слишком большой для этой версии Textus, оставлен как есть: {0}",
+      "doneBridgeTooLarge": "слишком большой для этой версии {0}",
       "icloudFolder": "Эта папка в iCloud Drive, которая уже её синхронизирует: облачная синхронизация здесь не нужна."
     },
     "pt": {
@@ -1881,6 +1908,9 @@
       "largestFile": "Maior arquivo sincronizado",
       "tooLargeFiles": "Mais de {1} MB, não sincronizados neste dispositivo: {0}",
       "doneTooLarge": "grandes demais {0}",
+      "bridgeTooLarge": "Um arquivo é maior do que esta versão do Textus consegue trazer: a ponte de plugins do app recusa respostas acima do próprio limite. Atualize o Textus ou deixe o arquivo fora deste espaço de trabalho.",
+      "bridgeTooLargeFiles": "Grande demais para esta versão do Textus trazer, deixado como está: {0}",
+      "doneBridgeTooLarge": "grande demais para esta versão {0}",
       "icloudFolder": "Esta pasta está no iCloud Drive, que já a sincroniza: aqui a sincronização na nuvem não é necessária."
     }
   },

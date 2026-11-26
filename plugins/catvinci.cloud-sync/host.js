@@ -428,7 +428,8 @@ function doneText(result, t) {
     ["doneConflicts", result.conflicts.length],
     ["doneDeferred", result.deferred.length],
     ["doneNotTrashed", result.notTrashed.length],
-    ["doneTooLarge", result.tooLarge?.length ?? 0]
+    ["doneTooLarge", result.tooLarge?.length ?? 0],
+    ["doneBridgeTooLarge", result.unreachable?.length ?? 0]
   ].filter(([, n]) => n > 0).map(([key, n]) => t(key, n));
   return parts.length ? parts.join(t("listSeparator")) : null;
 }
@@ -1589,7 +1590,7 @@ async function unlockEncryption(raw, password, pin) {
   return { cipher, metadata, fingerprint };
 }
 
-// node_modules/aws4fetch/dist/aws4fetch.esm.mjs
+// ../../../Users/admin/Work/textus-plugins/node_modules/aws4fetch/dist/aws4fetch.esm.mjs
 /**
  * @license MIT <https://opensource.org/licenses/MIT>
  * @copyright Michael Hart 2024
@@ -2894,7 +2895,7 @@ var GitHubStore = class {
           }
         });
       } catch (error) {
-        if (/too big/i.test(why(error))) throw new SyncError("tooLarge");
+        if (/too big/i.test(why(error))) throw new SyncError("bridgeTooLarge");
         if (attempt + 1 >= ATTEMPTS)
           throw new SyncError("networkError", [why(error)]);
         await this.sleep(backoff(attempt));
@@ -3210,6 +3211,17 @@ async function mirrorSync({
     return bytes;
   };
   const downloads = [];
+  const unreachable = [];
+  const pull = async (path, sha) => {
+    try {
+      return await store.mirrorBlob(sha);
+    } catch (error) {
+      if (!(error instanceof SyncError) || error.code !== "bridgeTooLarge")
+        throw error;
+      unreachable.push(path);
+      return void 0;
+    }
+  };
   const next = {};
   const steps = [
     .../* @__PURE__ */ new Set([
@@ -3240,12 +3252,8 @@ async function mirrorSync({
         await store.remove(path);
         result.removed++;
       } else {
-        downloads.push({
-          path,
-          bytes: await store.mirrorBlob(theirs),
-          expected: null,
-          from: theirs
-        });
+        const bytes2 = await pull(path, theirs);
+        if (bytes2) downloads.push({ path, bytes: bytes2, expected: null, from: theirs });
       }
       continue;
     }
@@ -3256,13 +3264,13 @@ async function mirrorSync({
         next[path] = { local: mine, remote: theirs };
         result.unchanged++;
       } else {
+        const bytes3 = await pull(path, theirs);
+        if (!bytes3) {
+          uploads.delete(path);
+          continue;
+        }
         const copy2 = conflictName(path, /* @__PURE__ */ new Date());
-        downloads.push({
-          path: copy2,
-          bytes: await store.mirrorBlob(theirs),
-          expected: null,
-          from: theirs
-        });
+        downloads.push({ path: copy2, bytes: bytes3, expected: null, from: theirs });
         result.conflicts.push(copy2);
       }
       continue;
@@ -3277,15 +3285,12 @@ async function mirrorSync({
       continue;
     }
     if (mine === remembered?.local) {
-      downloads.push({
-        path,
-        bytes: await store.mirrorBlob(theirs),
-        expected: mine,
-        from: theirs
-      });
+      const bytes2 = await pull(path, theirs);
+      if (bytes2) downloads.push({ path, bytes: bytes2, expected: mine, from: theirs });
       continue;
     }
-    const bytes = await store.mirrorBlob(theirs);
+    const bytes = await pull(path, theirs);
+    if (!bytes) continue;
     const copy = conflictName(path, /* @__PURE__ */ new Date());
     downloads.push({ path: copy, bytes, expected: null, from: theirs });
     await send(path);
@@ -3319,6 +3324,7 @@ async function mirrorSync({
     next[path] = { local: bytes ? await hash(bytes) : "", remote: sha };
   }
   for (const path of result.deferred) delete next[path];
+  if (unreachable.length) result.unreachable = unreachable.sort();
   await saveBase(next);
   return result;
 }

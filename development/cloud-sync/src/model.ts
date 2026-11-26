@@ -171,6 +171,10 @@ export interface Result {
   /** Over this device's largest file, here or in the cloud: left as they
    *  are. Absent from results saved before 0.8.1. */
   tooLarge?: string[];
+  /** The branch's version is past what this Textus build's plugin bridge
+   *  carries, and it was not brought in: left as it is on both sides, and
+   *  tried again next time. Absent from results saved before 0.9.1. */
+  unreachable?: string[];
   unchanged: number;
 }
 export class SyncError extends Error {

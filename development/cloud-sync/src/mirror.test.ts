@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { GitHubStore } from "./github-store";
 import { mirrorSync, parseMirrorBase, type MirrorBase } from "./mirror";
 import { MemoryLocal } from "./test-fixtures";
-import { bytes } from "./test-fixtures";
+import { bytes, text } from "./test-fixtures";
 import { normalizeConfig } from "./config";
 import type { Fetch } from "./transport";
 
@@ -26,6 +26,10 @@ const github = (files: Record<string, string> = {}) => {
     blobs.set(gitSha(content), content);
     tree.set(path, gitSha(content));
   };
+  /** A blob too big for the plugin bridge to carry into the plugin, in the
+   *  words the host uses for it. */
+  const overBridge = new Set<string>();
+  const tooBig = (path: string) => overBridge.add(tree.get(path)!);
   for (const [p, c] of Object.entries(files)) push(p, c);
   const json = (status: number, body: unknown) =>
     new Response(JSON.stringify(body), { status }) as never;
@@ -48,6 +52,10 @@ const github = (files: Record<string, string> = {}) => {
       });
     if (method === "GET" && path.startsWith("/git/blobs/")) {
       const sha = decodeURIComponent(path.slice("/git/blobs/".length));
+      // Past the host's own limit the bytes never arrive: the bridge says
+      // so instead, and retrying it would say the same.
+      if (overBridge.has(sha))
+        throw Error("plugin_http: The response is too big.");
       // The raw media type, as the store asks for it: bytes, no base64.
       return blobs.has(sha)
         ? (new Response(blobs.get(sha)!, { status: 200 }) as never)
@@ -76,7 +84,7 @@ const github = (files: Record<string, string> = {}) => {
       return json(200, {});
     return json(404, {});
   }) as Fetch;
-  return { fetch, tree: () => tree, push };
+  return { fetch, tree: () => tree, push, tooBig };
 };
 
 const store = (fetch: Fetch) =>
@@ -233,6 +241,38 @@ describe("a mirror sync", () => {
 });
 
 describe("a mirror base", () => {
+  it("leaves a file the plugin bridge cannot carry, and syncs the rest", async () => {
+    // The repository holds a file this Textus build's bridge can't hand to
+    // the plugin; the folder never had it.
+    const fake = github({ "big.pdf": "b".repeat(40), "note.md": "n" });
+    fake.tooBig("big.pdf");
+    const { local, result } = await base(fake, { "note.md": "n" });
+    expect(result.unreachable).toEqual(["big.pdf"]);
+    expect(result.downloaded).toBe(0);
+    expect(result.unchanged).toBe(1);
+    expect(await local.read("big.pdf")).toBeNull();
+  });
+
+  it("keeps the folder's copy of a file it cannot fetch", async () => {
+    const fake = github({ "big.pdf": "one", "note.md": "n" });
+    const first = await base(fake, { "big.pdf": "one", "note.md": "n" });
+    // Another tool rewrites the big file and adds one the bridge can carry.
+    fake.push("big.pdf", "two");
+    fake.push("small.md", "s");
+    fake.tooBig("big.pdf");
+    const local = new MemoryLocal({ "big.pdf": "one", "note.md": "n" });
+    const result = await mirrorSync({
+      store: store(fake.fetch),
+      local,
+      base: first.saved!,
+      saveBase: async () => {},
+    });
+    expect(result.unreachable).toEqual(["big.pdf"]);
+    expect(result.downloaded).toBe(1); // small.md came in
+    expect(text(await local.read("big.pdf"))).toBe("one"); // left as it was
+    expect(text(await local.read("small.md"))).toBe("s");
+  });
+
   it("reads only the entries with both sides", () => {
     const parsed = parseMirrorBase({
       files: {
